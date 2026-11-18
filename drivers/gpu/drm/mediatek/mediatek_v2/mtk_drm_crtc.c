@@ -2373,7 +2373,7 @@ static void mtk_drm_crtc_destroy_state(struct drm_crtc *crtc,
 	s = to_mtk_crtc_state(state);
 
 	__drm_atomic_helper_crtc_destroy_state(state);
-	DDPINFO("destroy/free crtc_state, 0x%llx\n", (u64)state);
+	DDPINFO("destroy/free crtc_state, 0x%08x\n", (uint32_t)(uintptr_t)state);
 	kfree(s);
 }
 
@@ -5086,7 +5086,8 @@ _mtk_crtc_wb_addon_module_connect(
 		!state->prop_val[CRTC_PROP_OUTPUT_ENABLE])
 		return;
 
-	if (priv->data->wb_skip_sec_buf && mtk_crtc_check_fb_secure(crtc))
+	if ((priv->data->wb_skip_sec_buf && mtk_crtc_check_fb_secure(crtc)) ||
+		mtk_crtc->crtc_blank)
 		return;
 
 	to_info = mtk_crtc_get_total_overhead(mtk_crtc);
@@ -5299,7 +5300,7 @@ _mtk_crtc_cwb_addon_module_connect(
 
 	mtk_crtc_cwb_set_sec(crtc);
 	if (!cwb_info->enable || cwb_info->is_sec ||
-			priv->need_cwb_path_disconnect)
+			priv->need_cwb_path_disconnect || mtk_crtc->crtc_blank)
 		return;
 
 	addon_data = mtk_addon_get_scenario_data(__func__, crtc,
@@ -6297,12 +6298,13 @@ static void mtk_crtc_get_plane_comp_state(struct drm_crtc *crtc,
 					mtk_ddp_comp_get_type(comp->id) != MTK_OVL_EXDMA))
 					continue;
 
-				DDPCUSTINFO("%s layer off comp %s lye %d ext lye %d bind comp %s\n",
-					__func__,
-					mtk_dump_comp_str(comp),
-					comp_state->lye_id,
-					comp_state->ext_lye_id,
-					mtk_dump_comp_str(comp->bind_comp));
+				if (priv->data->ovl_exdma_rule)
+					DDPCUSTINFO("%s layer off comp %s lye %d ext lye %d bind comp %s\n",
+						__func__,
+						mtk_dump_comp_str(comp),
+						comp_state->lye_id,
+						comp_state->ext_lye_id,
+						mtk_dump_comp_str(comp->bind_comp));
 
 
 				mtk_ddp_comp_layer_off(
@@ -10311,9 +10313,9 @@ static void ddp_cmdq_cb(struct cmdq_cb_data data)
 		return;
 	}
 
-	DDPINFO("%s crtc_state:0x%llx, atomic_state:%lu, crtc:%lu, pf:%u pkt:%p\n",
-		__func__, (u64)crtc_state, (unsigned long)atomic_state,
-		(unsigned long)crtc, cb_data->pres_fence_idx,
+	DDPINFO("crtc_state:0x%08x, atomic_state:%08x, crtc:%08x, pf:%u, pkt:%08x\n",
+		(uint32_t)(uintptr_t)crtc_state, (uint32_t)(uintptr_t)atomic_state,
+		(uint32_t)(uintptr_t)crtc, cb_data->pres_fence_idx,
 		cb_data->cmdq_handle);
 
 	session_id = mtk_get_session_id(crtc);
@@ -11623,6 +11625,7 @@ void mtk_crtc_start_trig_loop(struct drm_crtc *crtc)
 		}
 
 		GCE_DO(clear_event, EVENT_CMD_EOF);
+		GCE_DO(clear_event, EVENT_MML_DISP_DONE_EVENT);
 
 		mtk_crtc_comp_trigger(mtk_crtc, cmdq_handle, MTK_TRIG_FLAG_PRE_TRIGGER);
 
@@ -15769,6 +15772,9 @@ void mtk_drm_crtc_suspend(struct drm_crtc *crtc)
 	mtk_drm_crtc_wk_lock(crtc, 0, __func__, __LINE__);
 
 	mtk_vidle_dpc_pm_analysis();
+	/* no need to consider cam throttle between suspend and first LR after suspend */
+	if (index == 0)
+		atomic_set(&mtk_crtc->consider_cam_thro, 0);
 
 	CRTC_MMP_EVENT_END(index, suspend,
 			mtk_crtc->enabled, 0);
@@ -18905,7 +18911,8 @@ int mtk_crtc_gce_flush(struct drm_crtc *crtc, void *gce_cb,
 		}
 
 		/* No need for DBI skip secure */
-		if (priv->data->wb_skip_sec_buf && mtk_crtc_check_fb_secure(crtc)) {
+		if ((priv->data->wb_skip_sec_buf && mtk_crtc_check_fb_secure(crtc)) ||
+			mtk_crtc->crtc_blank) {
 			fence_idx = state->prop_val[CRTC_PROP_OUTPUT_FENCE_IDX];
 			session_id = mtk_get_session_id(crtc);
 			if (mtk_crtc->pq_data) {

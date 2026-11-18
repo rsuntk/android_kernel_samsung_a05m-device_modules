@@ -39,6 +39,10 @@
 #define VOLT_L_STR "thd-volts-l"
 #define VOLT_H_STR "thd-volts-h"
 
+#ifndef MAX
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#endif
+
 struct lbat_intr_tbl {
 	unsigned int volt;
 	unsigned int ag_volt;

@@ -4073,9 +4073,10 @@ static int mtk_dp_connector_atomic_check(struct drm_connector *connector,
 	mtk_dp->conn.state->hdr_output_metadata = tmp_state->hdr_output_metadata;
 
 	if (!mtk_dp->training_info.bCablePlugIn) {
-		if (mtk_dp->conn.state->hdr_output_metadata)
-			memset(mtk_dp->conn.state->hdr_output_metadata, 0,
-				sizeof(*mtk_dp->conn.state->hdr_output_metadata));
+		if (mtk_dp->conn.state->hdr_output_metadata) {
+			drm_property_blob_put(mtk_dp->conn.state->hdr_output_metadata);
+			mtk_dp->conn.state->hdr_output_metadata = NULL;
+		}
 	} else {
 		if ((mtk_dp->conn.state->hdr_output_metadata) &&
 		(mtk_dp->conn.hdr_sink_metadata.hdmi_type1.metadata_type & BIT(HDMI_STATIC_METADATA_TYPE1))) {
